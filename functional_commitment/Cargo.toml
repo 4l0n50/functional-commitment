@@ -10,7 +10,7 @@ ark-ff = { version = "^0.3.0", default-features = false }
 ark-poly = { version = "^0.3.0", default-features = false }
 homomorphic_poly_commit = { path = "../homomorphic_poly_commit"}
 index_private_marlin = { path = "../index_private_marlin"}
-pfr = { git = "https://github.com/4l0n50/pfr.git", branch = "integrate_with_fc", path = "pfr" }
+pfr = { git = "https://github.com/4l0n50/pfr.git", branch = "integrate_with_fc" }
 fiat_shamir_rng = { path = "../fiat_shamir_rng"}
 rand_chacha = { version = "0.3.0", default-features = false }
 blake2 = { version = "0.9", default-features = false }
