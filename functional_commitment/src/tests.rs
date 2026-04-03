@@ -95,6 +95,43 @@ mod tests {
         Ok(())
     }
 
+    pub fn build_fibonacci_output_circuit<F: PrimeField>(
+        cb: &mut ConstraintBuilder<F>,
+        f0_val: F,
+        f1_val: F,
+        num_steps: usize,
+    ) -> Result<(), Error> {
+        assert!(num_steps >= 2, "fibonacci circuit requires at least 2 steps");
+
+        let one = cb.new_input_variable("one", F::one())?;
+        let f0 = cb.new_input_variable("f0", f0_val)?;
+        let f1 = cb.new_input_variable("f1", f1_val)?;
+
+        let mut prev = f0;
+        let mut curr = f1;
+        for _ in 0..num_steps {
+            let next = cb.enforce_constraint(&prev, &curr, GateType::Add, VariableType::Witness)?;
+            prev = curr;
+            curr = next;
+        }
+
+        cb.enforce_constraint(&prev, &one, GateType::Mul, VariableType::Output)?;
+        cb.enforce_constraint(&curr, &one, GateType::Mul, VariableType::Output)?;
+
+        Ok(())
+    }
+
+    fn fibonacci_pair<F: Field>(f0: F, f1: F, num_steps: usize) -> (F, F) {
+        let mut prev = f0;
+        let mut curr = f1;
+        for _ in 0..num_steps {
+            let next = prev + curr;
+            prev = curr;
+            curr = next;
+        }
+        (prev, curr)
+    }
+
     /// The mimc7 circuit where nRounds = 2 and k = 2
     pub fn build_mimc7_circuit<F: PrimeField>(
         cb: &mut ConstraintBuilder<F>,
@@ -246,6 +283,38 @@ mod tests {
         circuit_test_template(constraints, &inputs, &outputs);
     }
 
+    #[test]
+    fn test_fibonacci_output_medium() {
+        let f0 = F::from(1u64);
+        let f1 = F::from(1u64);
+        let num_steps = 10;
+        let (out_n, out_n1) = fibonacci_pair(f0, f1, num_steps);
+
+        let constraints = |cb: &mut ConstraintBuilder<F>| -> Result<(), Error> {
+            build_fibonacci_output_circuit(cb, f0, f1, num_steps)
+        };
+
+        let inputs = vec![F::one(), f0, f1];
+        let outputs = vec![out_n, out_n1];
+        circuit_test_template(constraints, &inputs, &outputs);
+    }
+
+    #[test]
+    fn test_fibonacci_output_longer() {
+        let f0 = F::from(2u64);
+        let f1 = F::from(3u64);
+        let num_steps = 24;
+        let (out_n, out_n1) = fibonacci_pair(f0, f1, num_steps);
+
+        let constraints = |cb: &mut ConstraintBuilder<F>| -> Result<(), Error> {
+            build_fibonacci_output_circuit(cb, f0, f1, num_steps)
+        };
+
+        let inputs = vec![F::one(), f0, f1];
+        let outputs = vec![out_n, out_n1];
+        circuit_test_template(constraints, &inputs, &outputs);
+    }
+
     fn registers_to_f(registers: &[u64; 4]) -> F {
         let mut writer = vec![];
         let _ = registers.write(&mut writer);
@@ -343,24 +412,13 @@ mod tests {
             .unwrap()
             .size(); // |K|
 
-        // 3. Single SRS: large enough for both Marlin and PFR.
-        //    Marlin::universal_setup takes (num_constraints, num_variables, num_non_zero).
-        //    PFR needs max degree up to 2m+3; we ensure the SRS covers that by passing
-        //    a large enough num_non_zero (the actual value is already m = |K|).
+        // 3. Single SRS: use a conservative bound large enough for both Marlin and PFR.
         let nc = index_info.number_of_constraints;
-        let nv = nc; // square matrix
         let nz = index_info.number_of_non_zero_entries;
-        let marlin_max = ark_marlin::AHPForR1CS::<F>::max_degree(nc, nv, nz).unwrap();
-        let pfr_max = (n - 1).max(2 * m + 3);
-        // If PFR needs more than Marlin, bump the SRS by passing larger nz.
-        let srs = if pfr_max > marlin_max {
-            // Compute nz' such that marlin_max_degree(nc, nc, nz') >= pfr_max.
-            // 2*domain_k_size - 2 >= pfr_max  =>  domain_k_size >= (pfr_max+2)/2.
-            // Use nz' = pfr_max (domain will round up to next power of 2).
-            ModifiedMarlinInst::universal_setup(nc, nv, pfr_max, rng).unwrap()
-        } else {
-            ModifiedMarlinInst::universal_setup(nc, nv, nz, rng).unwrap()
-        };
+        let setup_bound = 8 * nc.max(nz).max(cb.assignment.len()).max(2 * m + 3);
+        let srs =
+            ModifiedMarlinInst::universal_setup(setup_bound, setup_bound, setup_bound, rng)
+                .unwrap();
 
         // 4. Marlin index: produces committed row, col, row_col polynomials.
         let circuit = AcCircuit::new(a.clone(), b.clone(), c.clone(), assignment, index_info.clone());
@@ -885,6 +943,22 @@ mod tests {
         // so pass inputs without the leading constant.
         let inputs = vec![F::from(2u64), F::from(5u64), x_val];
         let outputs = vec![F::from(362u64)];
+        circuit_test_with_pfr(constraints, &inputs, &outputs);
+    }
+
+    #[test]
+    fn test_fibonacci_output_with_pfr() {
+        let f0 = F::from(1u64);
+        let f1 = F::from(1u64);
+        let num_steps = 16;
+        let (out_n, out_n1) = fibonacci_pair(f0, f1, num_steps);
+
+        let constraints = |cb: &mut ConstraintBuilder<F>| -> Result<(), Error> {
+            build_fibonacci_output_circuit(cb, f0, f1, num_steps)
+        };
+
+        let inputs = vec![F::one(), f0, f1];
+        let outputs = vec![out_n, out_n1];
         circuit_test_with_pfr(constraints, &inputs, &outputs);
     }
 
