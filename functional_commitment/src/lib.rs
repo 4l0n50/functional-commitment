@@ -1,4 +1,5 @@
 mod tests;
+pub mod ac_bridge;
 
 #[macro_export]
 /// Print a Matrix
