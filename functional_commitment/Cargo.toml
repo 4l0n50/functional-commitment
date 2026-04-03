@@ -9,7 +9,6 @@ edition = "2021"
 ark-ff = { version = "^0.3.0", default-features = false }
 ark-poly = { version = "^0.3.0", default-features = false }
 pfr = { git = "https://github.com/4l0n50/pfr.git", branch = "integrate_with_fc" }
-fiat_shamir_rng = { path = "../fiat_shamir_rng"}
 rand_chacha = { version = "0.3.0", default-features = false }
 blake2 = { version = "0.9", default-features = false }
 ark-relations = { version = "^0.3.0", default-features = false }

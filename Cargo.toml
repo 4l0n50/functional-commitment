@@ -1,7 +1,6 @@
 [workspace]
 
 members = [
-    "fiat_shamir_rng",
     "ac_compiler", 
     "functional_commitment"
 ]
