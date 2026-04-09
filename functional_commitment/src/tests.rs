@@ -962,6 +962,48 @@ mod tests {
         circuit_test_with_pfr(constraints, &inputs, &outputs);
     }
 
+    // Regression test: shared SRS must be large enough for both Marlin and PFR.
+    // pfr_max_degree = (n-1).max(2*m+3) where m = |K| (next power of 2 above nz).
+    // A heuristic like 8*nc or AHPForR1CS::max_degree(nc, nv, nz) may be smaller
+    // than 2*m+3 for larger circuits, causing TrimmingDegreeTooLarge at PFR key setup.
+    #[test]
+    fn test_fibonacci_shared_srs_large_enough_for_pfr() {
+        use ark_marlin::ahp::AHPForR1CS;
+        use ac_compiler::circuit_compiler::{CircuitCompiler, VanillaCompiler};
+
+        let f0 = F::from(1u64);
+        let f1 = F::from(1u64);
+        let num_steps = 128; // large enough to expose the SRS sizing bug
+
+        let rng = &mut test_rng();
+        let mut cb = ConstraintBuilder::<F>::new();
+        let synthesized =
+            Circuit::synthesize(|cb| build_fibonacci_output_circuit(cb, f0, f1, num_steps), &mut cb)
+                .unwrap();
+        let (index_info, a, b, c) = VanillaCompiler::<F>::ac2tft(&synthesized);
+        let assignment = cb.assignment.clone();
+
+        let s = index_info.number_of_outputs;
+        let t = index_info.number_of_input_rows;
+        let nc = index_info.number_of_constraints;
+        let nz = index_info.number_of_non_zero_entries;
+        let n = GeneralEvaluationDomain::<F>::new(nc).unwrap().size();
+        let m_bound = GeneralEvaluationDomain::<F>::new(nz).unwrap().size();
+        let marlin_bound = AHPForR1CS::<F>::max_degree(nc, assignment.len(), nz).unwrap();
+        let pfr_bound = (n - 1).max(2 * m_bound + 3);
+        let setup_bound = marlin_bound.max(pfr_bound);
+
+        let srs = ModifiedMarlinInst::universal_setup(setup_bound, setup_bound, setup_bound, rng)
+            .unwrap();
+        let circuit = AcCircuit::new(a, b, c, assignment, index_info.clone());
+        let (marlin_pk, _marlin_vk) =
+            ModifiedMarlinInst::index(&srs, circuit, s, rng).unwrap();
+        let m = marlin_pk.index.joint_arith.evals_on_K.row.evals.len();
+
+        // This must not panic with TrimmingDegreeTooLarge:
+        let _pfr_pk = shared_srs_pfr_pk(&srs, n, m, t, rng);
+    }
+
     #[test]
     fn test_simple_circuit_marlin_vs_pfr_statement_commitments() {
         let x_val = F::from(7u64);
