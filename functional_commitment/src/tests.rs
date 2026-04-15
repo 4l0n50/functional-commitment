@@ -375,4 +375,36 @@ mod tests {
         };
         circuit_test_template(constraints, &inputs, &outputs);
     }
+
+    #[test]
+    fn test_fibonacci() {
+        let f0 = F::from(1u64);
+        let f1 = F::from(1u64);
+        let num_steps = 128; // 133 constraints → domain H size 256
+
+        let mut chain = vec![f0, f1];
+        for i in 2..(num_steps + 2) {
+            chain.push(chain[i - 1] + chain[i - 2]);
+        }
+        let inputs = vec![F::one(), f0, f1];
+        let outputs = vec![chain[num_steps], chain[num_steps + 1]];
+
+        let constraints = |cb: &mut ConstraintBuilder<F>| -> Result<(), Error> {
+            let one = cb.new_input_variable("one", F::one())?;
+            let f0v = cb.new_input_variable("f0", f0)?;
+            let f1v = cb.new_input_variable("f1", f1)?;
+            let mut prev = f0v;
+            let mut curr = f1v;
+            for _ in 0..num_steps {
+                let next =
+                    cb.enforce_constraint(&prev, &curr, GateType::Add, VariableType::Witness)?;
+                prev = curr;
+                curr = next;
+            }
+            cb.enforce_constraint(&prev, &one, GateType::Mul, VariableType::Output)?;
+            cb.enforce_constraint(&curr, &one, GateType::Mul, VariableType::Output)?;
+            Ok(())
+        };
+        circuit_test_template(constraints, &inputs, &outputs);
+    }
 }

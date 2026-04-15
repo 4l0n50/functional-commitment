@@ -135,7 +135,15 @@ impl<F: PrimeField, VO: VirtualOracle<F>> PIOPforZeroOverK<F, VO> {
             .collect::<Vec<_>>();
 
         // Compute f_prime using the virtual oracle's function
-        let f_prime = compute_f_prime(state.virtual_oracle, &h_primes)?;
+        let mut f_prime = compute_f_prime(state.virtual_oracle, &h_primes)?;
+
+        // Strip trailing zero coefficients: ark-poly's divide_with_q_and_r requires that
+        // the leading coefficient is nonzero, but polynomial arithmetic can produce spurious
+        // zeros in the high-degree terms (e.g. cancellation in large-value circuits).
+        // Truncating them is mathematically safe — they don't change the polynomial.
+        while f_prime.coeffs.last().map_or(false, |c| c.is_zero()) {
+            f_prime.coeffs.pop();
+        }
 
         // divide by the vanishing polynomial
         let (quotient, _r) = DenseOrSparsePolynomial::from(&f_prime)
