@@ -17,8 +17,14 @@ blake2 = { version = "0.9", default-features = false }
 ark-relations = { version = "^0.3.0", default-features = false }
 ark-poly-commit = { version = "^0.3.0", default-features = false }
 ark-std = { version = "^0.3.0", default-features = false }
+ark-serialize = { version = "^0.3.0", default-features = false }
+ark-bn254 = { version = "^0.3.0", default-features = false }
 ac_compiler = { path = "../ac_compiler" }
 
 [dev-dependencies]
-ark-bn254 = { version = "^0.3.0", default-features = false }
 ark-bls12-381 = { version = "^0.3.0", default-features = false, features = [ "curve" ] }
+criterion = { version = "0.4", features = ["html_reports"] }
+
+[[bench]]
+name = "fibonacci"
+harness = false

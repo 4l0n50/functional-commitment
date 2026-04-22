@@ -1,9 +1,8 @@
 use super::constraint_systems::LabeledPolynomial;
 use super::Error;
-use crate::well_formation::{construct_lagrange_basis, construct_vanishing};
+use crate::well_formation::{construct_lagrange_basis, construct_vanishing, normalize};
 use ac_compiler::R1CSfIndex;
-use ark_ff::PrimeField;
-use ark_ff::Zero;
+use ark_ff::{PrimeField, Zero};
 use ark_poly::univariate::DensePolynomial;
 use ark_poly::EvaluationDomain;
 use ark_poly::GeneralEvaluationDomain;
@@ -165,11 +164,13 @@ impl<F: PrimeField> AHPForR1CS<F> {
         for (l_i, x_i) in pi_bases.iter().zip(public_input.iter()) {
             x_poly += &(l_i * *x_i);
         }
+        let x_poly = normalize(x_poly);
 
         let mut y_poly = DensePolynomial::<F>::zero();
         for (l_i, y_i) in output_bases.iter().zip(output.iter()) {
             y_poly += &(l_i * *y_i);
         }
+        let y_poly = normalize(y_poly);
 
         // let z_poly = prover_state.z_poly.expect("Z must be calculated");
 

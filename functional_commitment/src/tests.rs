@@ -155,9 +155,9 @@ mod tests {
         let (pk, vk) = MarlinInst::index(&universal_srs, &index_info, a, b, c, rng).unwrap();
 
         // TEST MARLIN
+        let public_input = cb.assignment[..index_info.number_of_input_rows].to_vec();
         let proof = MarlinInst::prove(&pk, cb.assignment, rng).unwrap();
-
-        assert!(MarlinInst::verify(&vk, inputs, outputs, proof, rng, &pk.committer_key).unwrap());
+        assert!(MarlinInst::verify(&vk, &public_input, outputs, proof, rng, &pk.committer_key).unwrap());
 
         // TEST PROOF OF FUNCTION
         let labels = vec![

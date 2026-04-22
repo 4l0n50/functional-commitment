@@ -327,7 +327,7 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> Marlin<F
         let rational_sumcheck_vo = GenericShiftingVO::new(
             &vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             &vec![F::one(); 10],
-            rational_sumcheck_oracle!(verifier_first_msg, verifier_second_msg, domain_k),
+            rational_sumcheck_oracle!(verifier_first_msg, verifier_second_msg, domain_h),
         )?;
 
         let labels = AHPForR1CS::<F>::matrix_poly_labels();
@@ -446,7 +446,7 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> Marlin<F
         let verifier_time = start_timer!(|| "Marlin::Verify");
 
         let mut fs_rng =
-            FS::initialize(&to_bytes![&Self::PROTOCOL_NAME, &vk, &public_input].unwrap());
+            FS::initialize(&to_bytes![&Self::PROTOCOL_NAME, vk, &public_input].unwrap());
 
         // --------------------------------------------------------------------
         // First round
@@ -539,7 +539,7 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> Marlin<F
         let rational_sumcheck_vo = GenericShiftingVO::new(
             &vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             &vec![F::one(); 10],
-            rational_sumcheck_oracle!(verifier_first_msg, verifier_second_msg, domain_k),
+            rational_sumcheck_oracle!(verifier_first_msg, verifier_second_msg, domain_h),
         )?;
 
         let labels = AHPForR1CS::<F>::matrix_poly_labels();

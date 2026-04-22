@@ -295,4 +295,154 @@ mod test {
 
         assert_eq!(res.unwrap_err(), Error::BatchCheckError);
     }
+
+    #[test]
+    fn test_well_formation_vo_quadratic_masking_check2_fails() {
+        use crate::virtual_oracle::generic_shifting_vo::vo_term::VOTerm;
+        use crate::vo_constant;
+        use ark_ff::Zero;
+        use ark_poly::Polynomial;
+
+        let rng = &mut test_rng();
+
+        // Use domain H of size 256, matching a fibonacci circuit with 128 steps
+        let domain_h = GeneralEvaluationDomain::<F>::new(256).unwrap();
+        let elems: Vec<F> = domain_h.elements().collect();
+
+        let n_inputs = 3usize;  // one, f0, f1
+        let n_outputs = 2usize; // two output values
+
+        // Build the well-formation polynomials as index_private_marlin does,
+        // using the actual construct_lagrange_basis / construct_vanishing from well_formation.rs.
+        // We use fibonacci values to mirror the real failing case.
+        let mut chain = vec![F::one(), F::one()];
+        for i in 2..130usize { chain.push(chain[i-1] + chain[i-2]); }
+
+        // public inputs: [1, fib(0)=1, fib(1)=1]
+        let pi_vals = vec![F::one(), F::one(), F::one()];
+        // outputs: [fib(128), fib(129)]
+        let out_vals = vec![chain[128], chain[129]];
+
+        let pi_roots    = &elems[..n_inputs];
+        let out_roots   = &elems[elems.len() - n_outputs..];
+
+        // Lagrange interpolation for x_poly and y_poly
+        let lagrange_interp = |roots: &[F], vals: &[F]| -> DensePolynomial<F> {
+            let mut poly = DensePolynomial::<F>::zero();
+            for (i, &xi) in roots.iter().enumerate() {
+                let mut li = DensePolynomial::from_coefficients_slice(&[F::one()]);
+                for (j, &xj) in roots.iter().enumerate() {
+                    if i != j {
+                        let num = DensePolynomial::from_coefficients_slice(&[-xj, F::one()]);
+                        li = &li * &(&num * (xi - xj).inverse().unwrap());
+                    }
+                }
+                poly += &(&li * vals[i]);
+            }
+            while poly.coeffs.last().map_or(false, |c| c.is_zero()) { poly.coeffs.pop(); }
+            poly
+        };
+
+        let x_poly = lagrange_interp(pi_roots, &pi_vals);
+        let y_poly = lagrange_interp(out_roots, &out_vals);
+
+        let trunc = |mut p: DensePolynomial<F>| -> DensePolynomial<F> {
+            while p.coeffs.last().map_or(false, |c| c.is_zero()) { p.coeffs.pop(); }
+            p
+        };
+
+        // vh_gt_x vanishes on elems[n_inputs..]
+        let mut vh_gt_x = DensePolynomial::from_coefficients_slice(&[F::one()]);
+        for &r in &elems[n_inputs..] {
+            vh_gt_x = trunc(&vh_gt_x * &DensePolynomial::from_coefficients_slice(&[-r, F::one()]));
+        }
+
+        // vh_lt_y vanishes on elems[..256-n_outputs]
+        let mut vh_lt_y = DensePolynomial::from_coefficients_slice(&[F::one()]);
+        for &r in &elems[..elems.len() - n_outputs] {
+            vh_lt_y = trunc(&vh_lt_y * &DensePolynomial::from_coefficients_slice(&[-r, F::one()]));
+        }
+
+        // z: interpolated over all of H with values matching x_poly on pi_roots
+        // and y_poly on out_roots, and arbitrary elsewhere. Use random values in between.
+        let z_evals = (0..256).map(|i| {
+            if i < n_inputs { pi_vals[i] }
+            else if i >= 256 - n_outputs { out_vals[i - (256 - n_outputs)] }
+            else { F::from(i as u64) }
+        }).collect::<Vec<_>>();
+        let z = DensePolynomial::from_coefficients_slice(&domain_h.ifft(&z_evals));
+
+        // Sanity: VO pointwise on H should be zero
+        let sep = F::from(2u64);
+        for &r in &elems {
+            let zr = z.evaluate(&r);
+            let xr = x_poly.evaluate(&r);
+            let yr = y_poly.evaluate(&r);
+            let vhx = vh_gt_x.evaluate(&r);
+            let vhy = vh_lt_y.evaluate(&r);
+            let vo_val = (zr - xr) * vhx + sep * (zr - yr) * vhy;
+            assert_eq!(vo_val, F::zero(), "VO not zero at domain point");
+        }
+
+        // As polynomials, VO(z,x,vh_gt_x,y,vh_lt_y) should be divisible by zH
+        let vo_poly = {
+            let diff_x = &z - &x_poly;
+            let diff_y = &z - &y_poly;
+            &(&diff_x * &vh_gt_x) + &(&(&diff_y * &vh_lt_y) * sep)
+        };
+        let zh: DensePolynomial<F> = domain_h.vanishing_polynomial().into();
+        let (_, remainder) = ark_poly::univariate::DenseOrSparsePolynomial::from(&vo_poly)
+            .divide_with_q_and_r(&ark_poly::univariate::DenseOrSparsePolynomial::from(&zh))
+            .unwrap();
+        assert!(remainder.is_zero(), "VO poly not divisible by zH (unmasked)");
+
+        // Setup PC
+        let max_degree = 600;
+        let pp = PC::setup(max_degree, None, rng).unwrap();
+        let (ck, vk) = PC::trim(&pp, max_degree, 1, Some(&[2])).unwrap();
+
+        // Concrete oracles: [z, x_poly, vh_gt_x, y_poly, vh_lt_y]
+        // mapping [0,1,2,0,3,4] — z appears twice
+        let oracles = vec![
+            LabeledPolynomial::new("z".into(),       z,       None, Some(1)),
+            LabeledPolynomial::new("x".into(),       x_poly,  None, Some(1)),
+            LabeledPolynomial::new("vh_gt_x".into(), vh_gt_x, None, Some(1)),
+            LabeledPolynomial::new("y".into(),       y_poly,  None, Some(1)),
+            LabeledPolynomial::new("vh_lt_y".into(), vh_lt_y, None, Some(1)),
+        ];
+
+        let (commits, rands) = PC::commit(&ck, &oracles, Some(rng)).unwrap();
+
+        // Well-formation VO: same as in index_private_marlin
+        let vo = GenericShiftingVO::new(
+            &vec![0, 1, 2, 0, 3, 4],
+            &vec![F::one(); 6],
+            |terms: &[VOTerm<F>]| {
+                (terms[1].clone() - terms[2].clone()) * terms[3].clone()
+                    + vo_constant!(sep) * (terms[4].clone() - terms[5].clone()) * terms[6].clone()
+            },
+        ).unwrap();
+
+        let proof = ZeroOverK::<F, PC, FS>::prove(
+            &oracles,
+            &commits,
+            &rands,
+            None,
+            &vo,
+            &domain_h,
+            &ck,
+            rng,
+        ).unwrap();
+
+        let result = ZeroOverK::<F, PC, FS>::verify(
+            proof,
+            &commits,
+            None,
+            &vo,
+            &domain_h,
+            &vk,
+        );
+
+        assert!(result.is_ok());
+    }
 }

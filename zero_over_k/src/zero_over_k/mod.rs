@@ -122,6 +122,7 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> ZeroOver
             .chain(iter::once(&prover_first_oracles.q_1))
             .chain(iter::once(&prover_second_oracles.q_2));
 
+        // compute f_prime_poly and evaluate it at beta_1 for debugging
         // it gives us ((poly_label, point), evaluation)
         let evaluated_query_set =
             ark_poly_commit::evaluate_query_set(polynomials.clone(), &query_set);
@@ -383,7 +384,7 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> ZeroOver
 
         let separation_challenge = F::rand(&mut fs_rng);
 
-        match PC::batch_check(
+        let batch_result = PC::batch_check(
             vk,
             commitments,
             &query_set,
@@ -391,7 +392,8 @@ impl<F: PrimeField, PC: AdditivelyHomomorphicPCS<F>, FS: FiatShamirRng> ZeroOver
             &proof.opening_proof,
             separation_challenge,
             &mut OsRng,
-        ) {
+        );
+        match batch_result {
             Ok(true) => Ok(()),
             Ok(false) => Err(Error::BatchCheckError),
             Err(e) => panic!("{:?}", e),
