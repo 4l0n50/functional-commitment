@@ -20,6 +20,7 @@ ark-marlin = { git = "https://github.com/4l0n50/marlin.git", branch = "integrate
 [dev-dependencies]
 ark-bn254 = { version = "^0.3.0" }
 ark-bls12-381 = { version = "^0.3.0", default-features = false, features = [ "curve" ] }
+ark-serialize = { version = "^0.3.0" }
 criterion = "0.5"
 
 [[bench]]
