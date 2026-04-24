@@ -139,7 +139,7 @@ fn prepare_fibonacci(num_steps: usize) -> PreparedFibonacci {
     for i in 2..(num_steps + 2) {
         chain.push(chain[i - 1] + chain[i - 2]);
     }
-    let public_inputs = vec![F::one(), f0, f1];
+    let public_inputs = assignment[..index_info.number_of_input_rows].to_vec();
     let public_outputs = vec![chain[num_steps], chain[num_steps + 1]];
 
     let domain_k =
@@ -241,11 +241,21 @@ fn bench_fibonacci(c: &mut Criterion) {
     }
     marlin_prove_group.finish();
 
-    // fibonacci_marlin_verify is disabled: index_private_marlin::verify triggers
-    // ZeroOverKError(Check2Failed) — bug in the geometry-fc implementation.
-    // let mut marlin_verify_group = c.benchmark_group("fibonacci_marlin_verify");
-    // ...
-    // marlin_verify_group.finish();
+    let mut marlin_verify_group = c.benchmark_group("fibonacci_marlin_verify");
+    marlin_verify_group.sample_size(50);
+    marlin_verify_group.warm_up_time(Duration::from_secs(3));
+    marlin_verify_group.measurement_time(Duration::from_secs(20));
+    for &size in &sizes {
+        let prepared = prepare_fibonacci(size);
+        marlin_verify_group.bench_with_input(BenchmarkId::from_parameter(size), &prepared, |b, p: &PreparedFibonacci| {
+            b.iter(|| {
+                let rng = &mut test_rng();
+                let proof = index_private_marlin::data_structures::Proof::deserialize(p.marlin_proof_bytes.as_slice()).unwrap();
+                MarlinInst::verify(&p.vk, &p.public_inputs, &p.public_outputs, proof, rng, &p.pk.committer_key).unwrap()
+            });
+        });
+    }
+    marlin_verify_group.finish();
 
     let mut pfr_prove_group = c.benchmark_group("fibonacci_pfr_prove");
     pfr_prove_group.sample_size(20);
@@ -315,11 +325,45 @@ fn bench_fibonacci(c: &mut Criterion) {
     }
     combined_prove_group.finish();
 
-    // fibonacci_fc_combined_verify is disabled: calls MarlinInst::verify which
-    // triggers ZeroOverKError(Check2Failed) — bug in the geometry-fc implementation.
-    // let mut combined_verify_group = c.benchmark_group("fibonacci_fc_combined_verify");
-    // ...
-    // combined_verify_group.finish();
+    let mut combined_verify_group = c.benchmark_group("fibonacci_fc_combined_verify");
+    combined_verify_group.sample_size(50);
+    combined_verify_group.warm_up_time(Duration::from_secs(3));
+    combined_verify_group.measurement_time(Duration::from_secs(20));
+    for &size in &sizes {
+        let prepared = prepare_fibonacci(size);
+        let commits = make_commits(&prepared);
+        combined_verify_group.bench_with_input(
+            BenchmarkId::from_parameter(size),
+            &prepared,
+            |b, p: &PreparedFibonacci| {
+                b.iter(|| {
+                    let rng = &mut test_rng();
+                    let proof = index_private_marlin::data_structures::Proof::deserialize(p.marlin_proof_bytes.as_slice()).unwrap();
+                    MarlinInst::verify(&p.vk, &p.public_inputs, &p.public_outputs, proof, rng, &p.pk.committer_key).unwrap();
+                    let mut fs_rng = FS::initialize(&to_bytes!(FS_SEED).unwrap());
+                    TFT::<F, PC, FS>::verify(
+                        &p.vk.verifier_key,
+                        &p.pk.committer_key,
+                        p.index_info.number_of_input_rows,
+                        &commits[1],
+                        &commits[0],
+                        &commits[4],
+                        &commits[3],
+                        &commits[6],
+                        &commits[7],
+                        &commits[8],
+                        Some(p.domain_k.size() + 1),
+                        &p.domain_h,
+                        &p.domain_k,
+                        p.tft_proof.clone(),
+                        &mut fs_rng,
+                    )
+                    .unwrap()
+                });
+            },
+        );
+    }
+    combined_verify_group.finish();
 }
 
 criterion_group!(benches, bench_fibonacci);
